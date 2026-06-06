@@ -26,6 +26,20 @@
         
         #svg-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
         
+        /* 승급 선택 모달 UI */
+        #promotion-overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.6); z-index: 50; display: none;
+            justify-content: center; align-items: center;
+        }
+        #promotion-modal {
+            background: white; padding: 15px; border-radius: 8px; text-align: center;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+        }
+        .promo-pieces { display: flex; gap: 10px; margin-top: 10px; justify-content: center; }
+        .promo-btn { width: 50px; height: 50px; background-size: cover; cursor: pointer; border: 1px solid #ccc; border-radius: 4px; transition: background-color 0.2s; }
+        .promo-btn:hover { background-color: #f1c40f; }
+
         #controls, #replay-controls { margin-top: 20px; display: flex; flex-direction: column; align-items: center; gap: 10px; width: 100%; max-width: 500px;}
         
         .mode-select { display: flex; align-items: center; gap: 10px; font-size: 14px; margin-bottom: 5px; flex-wrap: wrap; justify-content: center; }
@@ -45,11 +59,11 @@
         .btn-undo { background-color: #7f8c8d; }
         .btn-demo { background-color: #8e44ad; }
         
-        /* 백/흑 전환 버튼 전용 스타일 */
         .btn-toggle-color { background-color: #34495e; padding: 5px 10px; flex: none; font-size: 12px; }
         
         .btn-nav { background-color: #34495e; font-size: 18px; padding: 10px; min-width: 0; }
         .btn-exit { background-color: #e74c3c; margin-top: 5px; width: 100%; }
+        .btn-cancel-promo { background-color: #7f8c8d; margin-top: 15px; width: 100%; }
     </style>
 </head>
 <body>
@@ -70,12 +84,20 @@
             </defs>
             <line id="tutor-arrow" x1="0" y1="0" x2="0" y2="0" stroke="#e74c3c" stroke-width="0.15" marker-end="url(#arrowhead)" display="none" />
         </svg>
+
+        <!-- 승급 선택 모달 오버레이 -->
+        <div id="promotion-overlay">
+            <div id="promotion-modal">
+                <div style="font-weight:bold; color:#333;">승급할 기물을 선택하세요</div>
+                <div class="promo-pieces" id="promo-pieces-container"></div>
+                <button class="btn-cancel-promo" onclick="cancelPromotion()">취소</button>
+            </div>
+        </div>
     </div>
 
     <!-- 기본 컨트롤 영역 -->
     <div id="controls">
         <div class="mode-select">
-            <!-- 백/흑 전환 버튼 추가 -->
             <button class="btn-toggle-color" onclick="toggleComputerColor()">백/흑 전환</button>
             <span class="mode-label" id="turn-label">흑 차례:</span>
             
@@ -85,13 +107,11 @@
             <label><input type="radio" name="mode" value="user" onchange="handleModeChange()"> 유저</label>
         </div>
         
-        <!-- 1번째 줄 버튼 3개 -->
         <div class="btn-group-row">
             <button class="btn-new" onclick="newGame('random')">랜덤시작</button>
             <button class="btn-new-center" onclick="newGame('lucena')">루세나시작</button>
             <button class="btn-restart" onclick="restartGame()">재시작</button>
         </div>
-        <!-- 2번째 줄 버튼 3개 -->
         <div class="btn-group-row">
             <button class="btn-editor" onclick="startEditor()">편집기</button>
             <button class="btn-undo" onclick="undoMove()">되돌리기</button>
@@ -128,17 +148,21 @@
         let demoHistory = [];
         let currentDemoIndex = 0;
 
-        // 컴퓨터가 잡을 색상 (기본: 흑)
         let computerColor = 'b';
+        let promotionResolve = null; // 승급 프라미스 리졸버 보관용
 
         const pieceUrls = {
             'K': 'https://images.chesscomfiles.com/chess-themes/pieces/neo/150/wk.png',
             'Q': 'https://images.chesscomfiles.com/chess-themes/pieces/neo/150/wq.png',
             'R': 'https://images.chesscomfiles.com/chess-themes/pieces/neo/150/wr.png',
+            'B': 'https://images.chesscomfiles.com/chess-themes/pieces/neo/150/wb.png',
+            'N': 'https://images.chesscomfiles.com/chess-themes/pieces/neo/150/wn.png',
             'P': 'https://images.chesscomfiles.com/chess-themes/pieces/neo/150/wp.png',
             'k': 'https://images.chesscomfiles.com/chess-themes/pieces/neo/150/bk.png',
             'q': 'https://images.chesscomfiles.com/chess-themes/pieces/neo/150/bq.png',
-            'r': 'https://images.chesscomfiles.com/chess-themes/pieces/neo/150/br.png'
+            'r': 'https://images.chesscomfiles.com/chess-themes/pieces/neo/150/br.png',
+            'b': 'https://images.chesscomfiles.com/chess-themes/pieces/neo/150/bb.png',
+            'n': 'https://images.chesscomfiles.com/chess-themes/pieces/neo/150/bn.png'
         };
 
         const moveSound = new Audio('https://images.chesscomfiles.com/chess-themes/sounds/_MP3_/default/move-self.mp3');
@@ -158,14 +182,12 @@
         const workerCode = `importScripts('https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.0/stockfish.js');`;
         const blob = new Blob([workerCode], {type: 'application/javascript'});
         
-        // 메인 엔진 (이동 및 최선의 수 계산용)
         const engine = new Worker(URL.createObjectURL(blob));
         engine.onmessage = function(event) {
             if (event.data === "uciok") newGame('lucena');
         };
         engine.postMessage("uci");
 
-        // 평가치 전용 백그라운드 엔진
         const evalEngine = new Worker(URL.createObjectURL(blob));
         evalEngine.postMessage("uci");
         
@@ -207,7 +229,7 @@
             document.getElementById('evaluation').innerText = "현재 평가치: 분석 중... (2초)";
             evalEngine.postMessage("stop");
             evalEngine.postMessage(`position fen ${game.fen()}`);
-            evalEngine.postMessage("go movetime 2000"); // 2초간 평가
+            evalEngine.postMessage("go movetime 2000"); 
         }
 
         function getBestMove(fen, timeLimit = 1500) {
@@ -224,6 +246,41 @@
                 engine.postMessage(`go movetime ${timeLimit}`);
             });
         }
+
+        // --- 승급 선택 UI 로직 ---
+        function askPromotionPiece(color) {
+            return new Promise(resolve => {
+                promotionResolve = resolve;
+                const overlay = document.getElementById('promotion-overlay');
+                const container = document.getElementById('promo-pieces-container');
+                container.innerHTML = '';
+                
+                const pieces = ['q', 'r', 'b', 'n'];
+                pieces.forEach(p => {
+                    const btn = document.createElement('div');
+                    btn.className = 'promo-btn';
+                    const pieceSymbol = color === 'w' ? p.toUpperCase() : p;
+                    btn.style.backgroundImage = `url(${pieceUrls[pieceSymbol]})`;
+                    btn.onclick = () => {
+                        overlay.style.display = 'none';
+                        promotionResolve = null;
+                        resolve(p); // 유저가 선택한 기물 기호 전달
+                    };
+                    container.appendChild(btn);
+                });
+                
+                overlay.style.display = 'flex';
+            });
+        }
+
+        function cancelPromotion() {
+            if (promotionResolve) {
+                document.getElementById('promotion-overlay').style.display = 'none';
+                promotionResolve(null);
+                promotionResolve = null;
+            }
+        }
+        // -----------------------
 
         function assembleFen(wk, wr, wp, bk, br) {
             let board = Array.from({ length: 8 }, () => Array(8).fill(null));
@@ -399,18 +456,15 @@
                 statusEl.innerText = "AI 기보 복기 중";
             }
 
-            // 보드 상태가 업데이트될 때마다 평가 엔진 실행
             startEvaluation();
         }
 
-        // 턴 전환 및 UI 변경
         function toggleComputerColor() {
             computerColor = computerColor === 'b' ? 'w' : 'b';
             document.getElementById('turn-label').innerText = computerColor === 'b' ? "흑 차례:" : "백 차례:";
-            checkAutoMove(); // 변경 후 바로 컴퓨터 차례면 실행
+            checkAutoMove(); 
         }
 
-        // 컴퓨터가 즉시 두어야 하는 상황인지 체크
         function checkAutoMove() {
             const mode = document.querySelector('input[name="mode"]:checked').value;
             if (game.turn() === computerColor && mode !== 'user' && !isCalculating && !isDemoMode && !isEditorMode && !game.game_over() && document.getElementById('replay-controls').style.display === 'none') {
@@ -581,7 +635,6 @@
             }
 
             const mode = document.querySelector('input[name="mode"]:checked').value;
-            // 컴퓨터 차례일 때 유저 조작 방지
             if (game.turn() === computerColor && mode !== 'user') return;
 
             const piece = game.get(square);
@@ -599,8 +652,17 @@
             const move = moves.find(m => m.from === selectedSquare && m.to === square);
 
             let finalSan = move ? move.san : null;
+            
+            // 폰 승급 이벤트 감지
             if (move && move.flags.includes('p') && !move.san.includes('=')) {
-                const promotionMove = moves.find(m => m.from === selectedSquare && m.to === square && m.promotion === 'q');
+                const promotionChoice = await askPromotionPiece(game.turn());
+                if (!promotionChoice) {
+                    // 유저가 모달에서 취소를 눌렀을 경우
+                    selectedSquare = null;
+                    renderBoard();
+                    return;
+                }
+                const promotionMove = moves.find(m => m.from === selectedSquare && m.to === square && m.promotion === promotionChoice);
                 if (promotionMove) finalSan = promotionMove.san;
             }
 
@@ -634,7 +696,6 @@
                 renderBoard();
                 updateStatus();
                 
-                // 유저의 턴이 끝나고 컴퓨터 차례가 되었다면
                 if (mode !== 'user' && game.turn() === computerColor && !game.game_over()) {
                     setTimeout(makeComputerMove, 100);
                 } else {
@@ -687,6 +748,10 @@
                     else if (m.captured === 'r') m.score += 900;
                     
                     if (m.san.includes('+')) m.score += 50;
+
+                    // 컴퓨터 로직이 승급 시 퀸을 최우선으로 고려하도록 유도
+                    if (m.promotion === 'q') m.score += 800;
+                    else if (m.promotion) m.score += 100;
 
                     if (m.piece === 'k' && pPos) {
                         const toFile = files.indexOf(m.to.charAt(0));
