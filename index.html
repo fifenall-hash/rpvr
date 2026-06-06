@@ -9,6 +9,7 @@
         body { font-family: 'Arial', sans-serif; margin: 0; padding: 10px; background-color: #f0f0f0; display: flex; flex-direction: column; align-items: center; }
         h2 { margin: 10px 0; font-size: 20px; text-align: center; }
         #status { font-weight: bold; margin-bottom: 5px; color: #333; font-size: 18px; }
+        #evaluation { font-size: 16px; font-weight: bold; margin-bottom: 5px; color: #8e44ad; }
         #move-counter { font-size: 14px; margin-bottom: 5px; color: #555; font-weight: bold; transition: color 0.3s; }
         #feedback { font-size: 14px; margin-bottom: 15px; color: blue; text-align: center; min-height: 20px; font-weight: bold; }
         
@@ -52,6 +53,7 @@
 
     <h2>룩폰v룩 마스터</h2>
     <div id="status">로딩 중...</div>
+    <div id="evaluation">현재 평가치: 대기 중...</div>
     <div id="move-counter">현재 1수 진행 중 (무승부까지: 50수 남음)</div>
     <div id="feedback">체스 엔진을 준비하고 있습니다.</div>
 
@@ -67,6 +69,7 @@
         </svg>
     </div>
 
+    <!-- 기본 컨트롤 영역 -->
     <div id="controls">
         <div class="mode-select">
             <span class="mode-label">흑 차례:</span>
@@ -76,11 +79,13 @@
             <label><input type="radio" name="mode" value="user" onchange="handleModeChange()"> 유저</label>
         </div>
         
+        <!-- 1번째 줄 버튼 3개 -->
         <div class="btn-group-row">
             <button class="btn-new" onclick="newGame('random')">랜덤시작</button>
             <button class="btn-new-center" onclick="newGame('lucena')">루세나시작</button>
             <button class="btn-restart" onclick="restartGame()">재시작</button>
         </div>
+        <!-- 2번째 줄 버튼 3개 -->
         <div class="btn-group-row">
             <button class="btn-editor" onclick="startEditor()">편집기</button>
             <button class="btn-undo" onclick="undoMove()">되돌리기</button>
@@ -88,6 +93,7 @@
         </div>
     </div>
 
+    <!-- 복기 컨트롤 영역 -->
     <div id="replay-controls" style="display: none;">
         <div class="nav-group">
             <button class="btn-nav" onclick="navDemo('first')">≪</button>
@@ -140,12 +146,58 @@
 
         const workerCode = `importScripts('https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.0/stockfish.js');`;
         const blob = new Blob([workerCode], {type: 'application/javascript'});
+        
+        // 메인 엔진 (이동 및 최선의 수 계산용)
         const engine = new Worker(URL.createObjectURL(blob));
-
         engine.onmessage = function(event) {
             if (event.data === "uciok") newGame('lucena');
         };
         engine.postMessage("uci");
+
+        // 평가치 전용 백그라운드 엔진
+        const evalEngine = new Worker(URL.createObjectURL(blob));
+        evalEngine.postMessage("uci");
+        
+        evalEngine.onmessage = function(event) {
+            const msg = event.data;
+            if (msg.includes("info") && (msg.includes("score cp") || msg.includes("score mate"))) {
+                let evalText = "";
+                let isWhiteTurn = game.turn() === 'w';
+                
+                if (msg.includes("score cp")) {
+                    let match = msg.match(/score cp (-?\d+)/);
+                    if (match) {
+                        let score = parseInt(match[1]) / 100;
+                        if (!isWhiteTurn) score = -score;
+                        evalText = (score > 0 ? "+" : "") + score.toFixed(2);
+                    }
+                } else if (msg.includes("score mate")) {
+                    let match = msg.match(/score mate (-?\d+)/);
+                    if (match) {
+                        let mateIn = parseInt(match[1]);
+                        if (!isWhiteTurn) mateIn = -mateIn;
+                        evalText = "M" + Math.abs(mateIn) + (mateIn > 0 ? " (백 승)" : " (흑 승)");
+                    }
+                }
+                
+                if (evalText) {
+                    document.getElementById('evaluation').innerText = "현재 평가치: " + evalText;
+                }
+            }
+        };
+
+        function startEvaluation() {
+            if (isEditorMode) {
+                document.getElementById('evaluation').innerText = "현재 평가치: (편집 중)";
+                return;
+            }
+            if (game.game_over()) return;
+            
+            document.getElementById('evaluation').innerText = "현재 평가치: 분석 중... (2초)";
+            evalEngine.postMessage("stop");
+            evalEngine.postMessage(`position fen ${game.fen()}`);
+            evalEngine.postMessage("go movetime 2000"); // 2초간 평가
+        }
 
         function getBestMove(fen, timeLimit = 1500) {
             return new Promise(resolve => {
@@ -197,7 +249,6 @@
                 const wpIdx = squares[2];
                 const wpRank = Math.floor(wpIdx / 8);
                 
-                // 폰은 1랭크나 8랭크에 있을 수 없습니다.
                 if (wpRank === 0 || wpRank === 7) continue;
 
                 const wk = { r: Math.floor(squares[0] / 8), c: squares[0] % 8 };
@@ -206,15 +257,12 @@
                 const bk = { r: Math.floor(squares[3] / 8), c: squares[3] % 8 };
                 const br = { r: Math.floor(squares[4] / 8), c: squares[4] % 8 };
 
-                // 킹끼리는 인접할 수 없습니다.
                 if (Math.abs(wk.r - bk.r) <= 1 && Math.abs(wk.c - bk.c) <= 1) continue;
 
                 let fen = assembleFen(wk, wr, wp, bk, br);
                 const tempGame = new Chess();
                 
-                // chess.js를 이용해 유효한 체스 상태인지 검증합니다.
                 if (tempGame.load(fen)) {
-                    // 시작하자마자 흑이 체크메이트이거나 백 킹이 체크 상태면 안 됩니다 (백 차례 기준).
                     if (!tempGame.in_check() && !tempGame.game_over()) {
                         return fen;
                     }
@@ -223,7 +271,6 @@
         }
 
         function generateLucenaFEN() {
-            // 루세나 포지션의 기본 FEN (백 폰이 승급 직전인 상태)
             return "1K6/1P1k4/8/8/8/8/2R5/7r w - - 0 1";
         }
 
@@ -294,6 +341,7 @@
                 feedbackEl.innerText = `빈 칸을 터치하여 ${piecesName[editorStep]}을 배치하세요.`;
                 feedbackEl.style.color = "#d35400"; 
                 counterEl.innerText = "자유롭게 초기 보드를 구성할 수 있습니다.";
+                startEvaluation();
                 return; 
             }
 
@@ -339,6 +387,9 @@
             } else if (isDemoMode && document.getElementById('replay-controls').style.display === 'block') {
                 statusEl.innerText = "AI 기보 복기 중";
             }
+
+            // 보드 상태가 업데이트될 때마다 평가 엔진 실행
+            startEvaluation();
         }
 
         function stopDemoAndReset() {
@@ -519,10 +570,8 @@
             const moves = game.moves({ verbose: true });
             const move = moves.find(m => m.from === selectedSquare && m.to === square);
 
-            // 승급 처리 (자동 퀸 승급)
             let finalSan = move ? move.san : null;
             if (move && move.flags.includes('p') && !move.san.includes('=')) {
-                // 이 상황을 위해 프로모션 수를 재탐색
                 const promotionMove = moves.find(m => m.from === selectedSquare && m.to === square && m.promotion === 'q');
                 if (promotionMove) finalSan = promotionMove.san;
             }
@@ -594,7 +643,6 @@
                 const moves = game.moves({ verbose: true });
                 let pPos = null;
                 
-                // 백 폰 위치 확인
                 const boardState = game.board();
                 for (let r = 0; r < 8; r++) {
                     for (let c = 0; c < 8; c++) {
@@ -606,19 +654,16 @@
                 
                 moves.forEach(m => {
                     m.score = 0;
-                    // 1순위: 폰 포획, 2순위: 룩 포획
                     if (m.captured === 'p') m.score += 1000;
                     else if (m.captured === 'r') m.score += 900;
                     
-                    // 체크를 거는 수 선호
                     if (m.san.includes('+')) m.score += 50;
 
-                    // 킹이 폰에 가까워지도록 유도
                     if (m.piece === 'k' && pPos) {
                         const toFile = files.indexOf(m.to.charAt(0));
                         const toRank = 8 - parseInt(m.to.charAt(1));
                         const distToPawn = Math.max(Math.abs(toFile - pPos.c), Math.abs(toRank - pPos.r));
-                        m.score -= distToPawn; // 거리가 짧을수록 점수 상승
+                        m.score -= distToPawn;
                     }
                 });
 
