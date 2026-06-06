@@ -45,6 +45,9 @@
         .btn-undo { background-color: #7f8c8d; }
         .btn-demo { background-color: #8e44ad; }
         
+        /* 백/흑 전환 버튼 전용 스타일 */
+        .btn-toggle-color { background-color: #34495e; padding: 5px 10px; flex: none; font-size: 12px; }
+        
         .btn-nav { background-color: #34495e; font-size: 18px; padding: 10px; min-width: 0; }
         .btn-exit { background-color: #e74c3c; margin-top: 5px; width: 100%; }
     </style>
@@ -72,7 +75,10 @@
     <!-- 기본 컨트롤 영역 -->
     <div id="controls">
         <div class="mode-select">
-            <span class="mode-label">흑 차례:</span>
+            <!-- 백/흑 전환 버튼 추가 -->
+            <button class="btn-toggle-color" onclick="toggleComputerColor()">백/흑 전환</button>
+            <span class="mode-label" id="turn-label">흑 차례:</span>
+            
             <label><input type="radio" name="mode" value="random" onchange="handleModeChange()"> 랜덤</label>
             <label><input type="radio" name="mode" value="engine" checked onchange="handleModeChange()"> 엔진</label>
             <label><input type="radio" name="mode" value="logic" onchange="handleModeChange()"> 로직</label>
@@ -122,13 +128,16 @@
         let demoHistory = [];
         let currentDemoIndex = 0;
 
+        // 컴퓨터가 잡을 색상 (기본: 흑)
+        let computerColor = 'b';
+
         const pieceUrls = {
             'K': 'https://images.chesscomfiles.com/chess-themes/pieces/neo/150/wk.png',
-            'Q': 'https://images.chesscomfiles.com/chess-themes/pieces/neo/150/wq.png', // 백 퀸 추가
+            'Q': 'https://images.chesscomfiles.com/chess-themes/pieces/neo/150/wq.png',
             'R': 'https://images.chesscomfiles.com/chess-themes/pieces/neo/150/wr.png',
             'P': 'https://images.chesscomfiles.com/chess-themes/pieces/neo/150/wp.png',
             'k': 'https://images.chesscomfiles.com/chess-themes/pieces/neo/150/bk.png',
-            'q': 'https://images.chesscomfiles.com/chess-themes/pieces/neo/150/bq.png', // 흑 퀸 추가
+            'q': 'https://images.chesscomfiles.com/chess-themes/pieces/neo/150/bq.png',
             'r': 'https://images.chesscomfiles.com/chess-themes/pieces/neo/150/br.png'
         };
 
@@ -394,6 +403,21 @@
             startEvaluation();
         }
 
+        // 턴 전환 및 UI 변경
+        function toggleComputerColor() {
+            computerColor = computerColor === 'b' ? 'w' : 'b';
+            document.getElementById('turn-label').innerText = computerColor === 'b' ? "흑 차례:" : "백 차례:";
+            checkAutoMove(); // 변경 후 바로 컴퓨터 차례면 실행
+        }
+
+        // 컴퓨터가 즉시 두어야 하는 상황인지 체크
+        function checkAutoMove() {
+            const mode = document.querySelector('input[name="mode"]:checked').value;
+            if (game.turn() === computerColor && mode !== 'user' && !isCalculating && !isDemoMode && !isEditorMode && !game.game_over() && document.getElementById('replay-controls').style.display === 'none') {
+                setTimeout(makeComputerMove, 500);
+            }
+        }
+
         function stopDemoAndReset() {
             isDemoMode = false;
             isEditorMode = false;
@@ -433,6 +457,7 @@
             
             renderBoard();
             updateStatus();
+            checkAutoMove();
         }
 
         function restartGame() {
@@ -450,6 +475,7 @@
             
             renderBoard();
             updateStatus();
+            checkAutoMove();
         }
 
         function undoMove() {
@@ -477,14 +503,12 @@
                 
                 document.getElementById('feedback').innerText = "수를 되돌렸습니다.";
                 document.getElementById('feedback').style.color = "blue";
+                checkAutoMove();
             }
         }
 
         function handleModeChange() {
-            const mode = document.querySelector('input[name="mode"]:checked').value;
-            if (game.turn() === 'b' && mode !== 'user' && !isCalculating && !isDemoMode && !isEditorMode && !game.game_over() && document.getElementById('replay-controls').style.display === 'none') {
-                makeComputerMove();
-            }
+            checkAutoMove();
         }
 
         async function handleSquareClick(square) {
@@ -549,6 +573,7 @@
                     document.getElementById('feedback').innerText = "편집 완료! 첫 수를 둬보세요.";
                     document.getElementById('feedback').style.color = "blue";
                     updateStatus();
+                    checkAutoMove();
                 } else {
                     updateStatus(); 
                 }
@@ -556,7 +581,8 @@
             }
 
             const mode = document.querySelector('input[name="mode"]:checked').value;
-            if (game.turn() === 'b' && mode !== 'user') return;
+            // 컴퓨터 차례일 때 유저 조작 방지
+            if (game.turn() === computerColor && mode !== 'user') return;
 
             const piece = game.get(square);
 
@@ -608,7 +634,8 @@
                 renderBoard();
                 updateStatus();
                 
-                if (mode !== 'user' && game.turn() === 'b' && !game.game_over()) {
+                // 유저의 턴이 끝나고 컴퓨터 차례가 되었다면
+                if (mode !== 'user' && game.turn() === computerColor && !game.game_over()) {
                     setTimeout(makeComputerMove, 100);
                 } else {
                     isCalculating = false; 
@@ -626,7 +653,7 @@
         }
 
         async function makeComputerMove() {
-            if (game.game_over() || game.turn() !== 'b' || isDemoMode || isEditorMode) return;
+            if (game.game_over() || game.turn() !== computerColor || isDemoMode || isEditorMode) return;
 
             const mode = document.querySelector('input[name="mode"]:checked').value;
             if (mode === 'user') return; 
@@ -635,12 +662,12 @@
             isCalculating = true; 
 
             if (mode === 'engine') {
-                document.getElementById('status').innerText = "컴퓨터(엔진)가 방어 중... (1.5초)";
+                document.getElementById('status').innerText = "컴퓨터(엔진)가 계산 중... (1.5초)";
                 const bestMove = await getBestMove(game.fen(), 1500);
                 moveObj = game.move(bestMove, { sloppy: true });
             } 
             else if (mode === 'logic') {
-                document.getElementById('status').innerText = "컴퓨터(로직)가 방어 중...";
+                document.getElementById('status').innerText = "컴퓨터(로직)가 계산 중...";
                 
                 const moves = game.moves({ verbose: true });
                 let pPos = null;
@@ -776,6 +803,7 @@
             
             renderBoard();
             updateStatus();
+            checkAutoMove();
         }
     </script>
 </body>
