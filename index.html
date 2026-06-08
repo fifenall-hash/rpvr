@@ -103,7 +103,6 @@
             <button class="btn-toggle-color" onclick="toggleComputerColor()">백/흑 전환</button>
             <span class="mode-label" id="turn-label">흑 차례:</span>
             
-            <!-- 로직 옵션 제거 -->
             <label><input type="radio" name="mode" value="random" onchange="handleModeChange()"> 랜덤</label>
             <label><input type="radio" name="mode" value="engine" checked onchange="handleModeChange()"> 엔진</label>
             <label><input type="radio" name="mode" value="user" onchange="handleModeChange()"> 유저</label>
@@ -314,6 +313,25 @@
             return fen + " w - - 0 1";
         }
 
+        // --- 새로 추가된 포지션 검증 함수 ---
+        function isValidStartingPosition(fen) {
+            const tempGame = new Chess();
+            
+            // 1차: FEN 자체가 유효한 구조인지 확인
+            if (!tempGame.load(fen)) return false;
+            
+            // 2차: 백 차례로 시작할 때, 흑 킹이 이미 공격받고 있다면 불법적인 포지션이므로 제외
+            const blackToMoveFen = fen.replace(" w ", " b ");
+            const testGame = new Chess();
+            if (testGame.load(blackToMoveFen)) {
+                if (testGame.in_check()) return false;
+            }
+            
+            // 3차: 이미 게임이 끝난 상태(체크메이트, 스테일메이트 등)가 아닌지 확인
+            return !tempGame.game_over();
+        }
+
+        // --- 업데이트된 FEN 생성 함수들 ---
         function generateRandomValidFEN_Anywhere() {
             while (true) {
                 let squares = [];
@@ -336,12 +354,9 @@
                 if (Math.abs(wk.r - bk.r) <= 1 && Math.abs(wk.c - bk.c) <= 1) continue;
 
                 let fen = assembleFen(wk, wr, wp, bk, br);
-                const tempGame = new Chess();
                 
-                if (tempGame.load(fen)) {
-                    if (!tempGame.game_over()) {
-                        return fen;
-                    }
+                if (isValidStartingPosition(fen)) {
+                    return fen;
                 }
             }
         }
@@ -364,67 +379,76 @@
                 const br_r = Math.floor(Math.random() * 3) + 5; 
                 const br_c = longDir === 1 ? (Math.floor(Math.random() * 2) + 6) : (Math.floor(Math.random() * 2)); 
 
+                const br = { r: br_r, c: br_c };
+
                 let fen = assembleFen(wk, wr, wp, bk, br);
-                const tempGame = new Chess();
                 
-                if (tempGame.load(fen)) {
-                    if (!tempGame.game_over()) {
-                        return fen;
-                    }
+                if (isValidStartingPosition(fen)) {
+                    return fen;
                 }
             }
         }
 
         function generatePhilidorFEN() {
             while (true) {
-                // 필리도어 정석: 폰이 5랭크 도달, 방어 킹은 승급 칸에, 방어 룩은 3랭크에 있어 공격 킹을 차단
-                const f = Math.floor(Math.random() * 4) + 2; 
+                // 폰의 위치를 b~g 파일(1~6)로 폭넓게 확장
+                const f = Math.floor(Math.random() * 6) + 1; 
                 
                 const wp = { r: 3, c: f }; // 5랭크 
-                const wk = { r: 4, c: f }; // 4랭크 (폰 뒤)
-                const bk = { r: 0, c: f }; // 8랭크 (승급 지점 방어)
                 
-                const wr = { r: 1, c: (f + 2) % 8 }; // 7랭크 아무 곳
-                const br = { r: 2, c: (f - 2 + 8) % 8 }; // 6랭크 (상대 킹의 3랭크 진출 차단)
+                // 백 킹은 폰 주변 다양한 파일에 무작위로 위치
+                const wkC = f + (Math.floor(Math.random() * 3) - 1); 
+                const validWkC = Math.max(0, Math.min(7, wkC));
+                const wk = { r: 4, c: validWkC }; // 4랭크
+                
+                // 흑 킹은 승급 칸 방어 (8랭크)
+                const bk = { r: 0, c: f }; 
+                
+                // 백 룩은 7랭크 무작위 위치 (폰과 겹치지 않게)
+                let wrC;
+                do {
+                    wrC = Math.floor(Math.random() * 8);
+                } while (wrC === f);
+                const wr = { r: 1, c: wrC }; 
+                
+                // 흑 룩은 6랭크에서 무작위 위치로 백 킹의 전진을 차단
+                let brC;
+                do {
+                    brC = Math.floor(Math.random() * 8);
+                } while (brC === f || brC === wrC);
+                const br = { r: 2, c: brC };
 
                 let fen = assembleFen(wk, wr, wp, bk, br);
-                const tempGame = new Chess();
                 
-                if (tempGame.load(fen)) {
-                    if (!tempGame.game_over()) {
-                        return fen;
-                    }
+                if (isValidStartingPosition(fen)) {
+                    return fen;
                 }
             }
         }
 
         function generateVancuraFEN() {
             while (true) {
-                // 반쿠라 정석: 룩 폰(a 또는 h)을 가진 상태에서 수비하는 형태
                 const isAFile = Math.random() < 0.5;
                 let wp, wk, wr, bk, br;
 
                 if (isAFile) {
-                    wp = { r: 3, c: 0 }; // a5
-                    wk = { r: 2, c: 0 }; // a6
-                    bk = { r: 1, c: 6 }; // g7
-                    wr = { r: 7, c: 1 }; // b1
-                    br = { r: 3, c: 5 }; // f5 (측면 방어)
+                    wp = { r: 3, c: 0 }; 
+                    wk = { r: 2, c: 0 }; 
+                    bk = { r: 1, c: 6 }; 
+                    wr = { r: 7, c: 1 }; 
+                    br = { r: 3, c: 5 }; 
                 } else {
-                    wp = { r: 3, c: 7 }; // h5
-                    wk = { r: 2, c: 7 }; // h6
-                    bk = { r: 1, c: 1 }; // b7
-                    wr = { r: 7, c: 6 }; // g1
-                    br = { r: 3, c: 2 }; // c5 (측면 방어)
+                    wp = { r: 3, c: 7 }; 
+                    wk = { r: 2, c: 7 }; 
+                    bk = { r: 1, c: 1 }; 
+                    wr = { r: 7, c: 6 }; 
+                    br = { r: 3, c: 2 }; 
                 }
 
                 let fen = assembleFen(wk, wr, wp, bk, br);
-                const tempGame = new Chess();
                 
-                if (tempGame.load(fen)) {
-                    if (!tempGame.game_over()) {
-                        return fen;
-                    }
+                if (isValidStartingPosition(fen)) {
+                    return fen;
                 }
             }
         }
