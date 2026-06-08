@@ -85,7 +85,6 @@
             <line id="tutor-arrow" x1="0" y1="0" x2="0" y2="0" stroke="#e74c3c" stroke-width="0.15" marker-end="url(#arrowhead)" display="none" />
         </svg>
 
-        <!-- 승급 선택 모달 오버레이 -->
         <div id="promotion-overlay">
             <div id="promotion-modal">
                 <div style="font-weight:bold; color:#333;">승급할 기물을 선택하세요</div>
@@ -95,7 +94,6 @@
         </div>
     </div>
 
-    <!-- 기본 컨트롤 영역 -->
     <div id="controls">
         <div class="mode-select">
             <button class="btn-toggle-color" onclick="toggleComputerColor()">백/흑 전환</button>
@@ -103,7 +101,6 @@
             
             <label><input type="radio" name="mode" value="random" onchange="handleModeChange()"> 랜덤</label>
             <label><input type="radio" name="mode" value="engine" checked onchange="handleModeChange()"> 엔진</label>
-            <label><input type="radio" name="mode" value="logic" onchange="handleModeChange()"> 로직</label>
             <label><input type="radio" name="mode" value="user" onchange="handleModeChange()"> 유저</label>
         </div>
         
@@ -119,7 +116,6 @@
         </div>
     </div>
 
-    <!-- 복기 컨트롤 영역 -->
     <div id="replay-controls" style="display: none;">
         <div class="nav-group">
             <button class="btn-nav" onclick="navDemo('first')">≪</button>
@@ -312,16 +308,17 @@
                     let randomSq = Math.floor(Math.random() * 64);
                     if (!squares.includes(randomSq)) squares.push(randomSq);
                 }
-                const wpIdx = squares[2];
+                
+                const wpIdx = squares[0];
                 const wpRank = Math.floor(wpIdx / 8);
                 
                 if (wpRank === 0 || wpRank === 7) continue;
 
-                const wk = { r: Math.floor(squares[0] / 8), c: squares[0] % 8 };
-                const wr = { r: Math.floor(squares[1] / 8), c: squares[1] % 8 };
                 const wp = { r: wpRank, c: wpIdx % 8 };
-                const bk = { r: Math.floor(squares[3] / 8), c: squares[3] % 8 };
-                const br = { r: Math.floor(squares[4] / 8), c: squares[4] % 8 };
+                const wr = { r: Math.floor(squares[1] / 8), c: squares[1] % 8 };
+                const wk = { r: Math.floor(squares[2] / 8), c: squares[2] % 8 };
+                const br = { r: Math.floor(squares[3] / 8), c: squares[3] % 8 };
+                const bk = { r: Math.floor(squares[4] / 8), c: squares[4] % 8 };
 
                 if (Math.abs(wk.r - bk.r) <= 1 && Math.abs(wk.c - bk.c) <= 1) continue;
 
@@ -329,7 +326,7 @@
                 const tempGame = new Chess();
                 
                 if (tempGame.load(fen)) {
-                    if (!tempGame.in_check() && !tempGame.game_over()) {
+                    if (!tempGame.game_over()) {
                         return fen;
                     }
                 }
@@ -337,7 +334,39 @@
         }
 
         function generateLucenaFEN() {
-            return "1K6/1P1k4/8/8/8/8/2R5/7r w - - 0 1";
+            while (true) {
+                // c, d, e, f 파일(2, 3, 4, 5) 중에서 폰 위치를 선정합니다. (루세나의 정석 범위)
+                const pF = Math.floor(Math.random() * 4) + 2; 
+                
+                // 단변(Short side)의 방향을 무작위로 설정 (-1 은 왼쪽, 1 은 오른쪽)
+                const shortDir = Math.random() < 0.5 ? -1 : 1;
+                // 장변(Long side)은 반대쪽
+                const longDir = -shortDir;
+
+                // 백 킹, 폰 위치 (8랭크, 7랭크)
+                const wk = { r: 0, c: pF };
+                const wp = { r: 1, c: pF };
+                
+                // 백 룩 위치: 단변에서 1랭크나 2랭크에서 흑 킹을 차단
+                const wr = { r: Math.random() < 0.5 ? 6 : 7, c: pF + shortDir };
+                
+                // 흑 킹 위치: 단변 안쪽의 8랭크 또는 7랭크
+                const bk = { r: Math.random() < 0.5 ? 0 : 1, c: pF + shortDir * 2 };
+                
+                // 흑 룩 위치: 장변(Long side)의 가장 먼 곳, 1~3랭크에 자유롭게 위치
+                const br_r = Math.floor(Math.random() * 3) + 5; 
+                const br_c = longDir === 1 ? (Math.floor(Math.random() * 2) + 6) : (Math.floor(Math.random() * 2)); 
+
+                let fen = assembleFen(wk, wr, wp, bk, br);
+                const tempGame = new Chess();
+                
+                // 체스 엔진 규칙상 유효한지 검증 후 반환
+                if (tempGame.load(fen)) {
+                    if (!tempGame.game_over()) {
+                        return fen;
+                    }
+                }
+            }
         }
 
         function renderBoard() {
@@ -503,7 +532,7 @@
             missedBestMove = null;
             isCalculating = false;
             
-            const message = type === 'lucena' ? "루세나 포지션 배치 완료! 승급을 향해 폰을 전진시키세요." : "무작위 배치 완료! 첫 수를 둬보세요.";
+            const message = type === 'lucena' ? "루세나 포지션이 무작위로 생성되었습니다! 다리를 만들어 승리하세요." : "무작위 배치 완료! 첫 수를 둬보세요.";
             document.getElementById('feedback').innerText = message;
             document.getElementById('feedback').style.color = "blue";
             
@@ -647,19 +676,16 @@
             }
 
             const moves = game.moves({ verbose: true });
-            // from과 to가 일치하는 모든 수 필터링 (승급 시 여러 수가 반환됨)
             const possibleMoves = moves.filter(m => m.from === selectedSquare && m.to === square);
 
             let finalSan = null;
 
             if (possibleMoves.length > 0) {
-                // 승급 수인지 확인 (하나라도 promotion 값이 있는지)
                 const isPromotion = possibleMoves.some(m => m.flags.includes('p') || m.promotion);
 
                 if (isPromotion) {
                     const promotionChoice = await askPromotionPiece(game.turn());
                     if (!promotionChoice) {
-                        // 모달창에서 취소 클릭 시
                         selectedSquare = null;
                         renderBoard();
                         return;
@@ -667,7 +693,6 @@
                     const promoMove = possibleMoves.find(m => m.promotion === promotionChoice);
                     if (promoMove) finalSan = promoMove.san;
                 } else {
-                    // 일반적인 이동
                     finalSan = possibleMoves[0].san;
                 }
             }
@@ -733,47 +758,8 @@
                 const bestMove = await getBestMove(game.fen(), 1500);
                 moveObj = game.move(bestMove, { sloppy: true });
             } 
-            else if (mode === 'logic') {
-                document.getElementById('status').innerText = "컴퓨터(로직)가 계산 중...";
-                
-                const moves = game.moves({ verbose: true });
-                let pPos = null;
-                
-                const boardState = game.board();
-                for (let r = 0; r < 8; r++) {
-                    for (let c = 0; c < 8; c++) {
-                        if (boardState[r][c] && boardState[r][c].color === 'w' && boardState[r][c].type === 'p') {
-                            pPos = {r, c};
-                        }
-                    }
-                }
-                
-                moves.forEach(m => {
-                    m.score = 0;
-                    if (m.captured === 'p') m.score += 1000;
-                    else if (m.captured === 'r') m.score += 900;
-                    
-                    if (m.san.includes('+')) m.score += 50;
-
-                    if (m.promotion === 'q') m.score += 800;
-                    else if (m.promotion) m.score += 100;
-
-                    if (m.piece === 'k' && pPos) {
-                        const toFile = files.indexOf(m.to.charAt(0));
-                        const toRank = 8 - parseInt(m.to.charAt(1));
-                        const distToPawn = Math.max(Math.abs(toFile - pPos.c), Math.abs(toRank - pPos.r));
-                        m.score -= distToPawn;
-                    }
-                });
-
-                moves.sort((a, b) => b.score - a.score);
-                const bestScoreMoves = moves.filter(m => m.score === moves[0].score);
-                const chosenMove = bestScoreMoves[Math.floor(Math.random() * bestScoreMoves.length)];
-
-                await new Promise(resolve => setTimeout(resolve, 500));
-                moveObj = game.move(chosenMove.san);
-            } 
             else {
+                // 랜덤 모드
                 const moves = game.moves();
                 const randomMove = moves[Math.floor(Math.random() * moves.length)];
                 moveObj = game.move(randomMove);
