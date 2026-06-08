@@ -149,7 +149,7 @@
         let currentDemoIndex = 0;
 
         let computerColor = 'b';
-        let promotionResolve = null; // 승급 프라미스 리졸버 보관용
+        let promotionResolve = null; 
 
         const pieceUrls = {
             'K': 'https://images.chesscomfiles.com/chess-themes/pieces/neo/150/wk.png',
@@ -247,7 +247,6 @@
             });
         }
 
-        // --- 승급 선택 UI 로직 ---
         function askPromotionPiece(color) {
             return new Promise(resolve => {
                 promotionResolve = resolve;
@@ -264,7 +263,7 @@
                     btn.onclick = () => {
                         overlay.style.display = 'none';
                         promotionResolve = null;
-                        resolve(p); // 유저가 선택한 기물 기호 전달
+                        resolve(p); 
                     };
                     container.appendChild(btn);
                 });
@@ -280,7 +279,6 @@
                 promotionResolve = null;
             }
         }
-        // -----------------------
 
         function assembleFen(wk, wr, wp, bk, br) {
             let board = Array.from({ length: 8 }, () => Array(8).fill(null));
@@ -649,21 +647,29 @@
             }
 
             const moves = game.moves({ verbose: true });
-            const move = moves.find(m => m.from === selectedSquare && m.to === square);
+            // from과 to가 일치하는 모든 수 필터링 (승급 시 여러 수가 반환됨)
+            const possibleMoves = moves.filter(m => m.from === selectedSquare && m.to === square);
 
-            let finalSan = move ? move.san : null;
-            
-            // 폰 승급 이벤트 감지
-            if (move && move.flags.includes('p') && !move.san.includes('=')) {
-                const promotionChoice = await askPromotionPiece(game.turn());
-                if (!promotionChoice) {
-                    // 유저가 모달에서 취소를 눌렀을 경우
-                    selectedSquare = null;
-                    renderBoard();
-                    return;
+            let finalSan = null;
+
+            if (possibleMoves.length > 0) {
+                // 승급 수인지 확인 (하나라도 promotion 값이 있는지)
+                const isPromotion = possibleMoves.some(m => m.flags.includes('p') || m.promotion);
+
+                if (isPromotion) {
+                    const promotionChoice = await askPromotionPiece(game.turn());
+                    if (!promotionChoice) {
+                        // 모달창에서 취소 클릭 시
+                        selectedSquare = null;
+                        renderBoard();
+                        return;
+                    }
+                    const promoMove = possibleMoves.find(m => m.promotion === promotionChoice);
+                    if (promoMove) finalSan = promoMove.san;
+                } else {
+                    // 일반적인 이동
+                    finalSan = possibleMoves[0].san;
                 }
-                const promotionMove = moves.find(m => m.from === selectedSquare && m.to === square && m.promotion === promotionChoice);
-                if (promotionMove) finalSan = promotionMove.san;
             }
 
             if (finalSan) {
@@ -749,7 +755,6 @@
                     
                     if (m.san.includes('+')) m.score += 50;
 
-                    // 컴퓨터 로직이 승급 시 퀸을 최우선으로 고려하도록 유도
                     if (m.promotion === 'q') m.score += 800;
                     else if (m.promotion) m.score += 100;
 
