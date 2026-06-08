@@ -52,12 +52,14 @@
         button:active:not(:disabled) { transform: translateY(2px); }
         button:disabled { opacity: 0.5; cursor: not-allowed; box-shadow: none; transform: none; }
         
-        .btn-new { background-color: #4CAF50; }
-        .btn-new-center { background-color: #2980b9; }
+        .btn-lucena { background-color: #2980b9; }
+        .btn-philidor { background-color: #8e44ad; }
+        .btn-vancura { background-color: #d35400; }
+        .btn-random { background-color: #27ae60; }
         .btn-restart { background-color: #f39c12; }
         .btn-editor { background-color: #16a085; }
         .btn-undo { background-color: #7f8c8d; }
-        .btn-demo { background-color: #8e44ad; }
+        .btn-demo { background-color: #34495e; }
         
         .btn-toggle-color { background-color: #34495e; padding: 5px 10px; flex: none; font-size: 12px; }
         
@@ -85,6 +87,7 @@
             <line id="tutor-arrow" x1="0" y1="0" x2="0" y2="0" stroke="#e74c3c" stroke-width="0.15" marker-end="url(#arrowhead)" display="none" />
         </svg>
 
+        <!-- 승급 선택 모달 오버레이 -->
         <div id="promotion-overlay">
             <div id="promotion-modal">
                 <div style="font-weight:bold; color:#333;">승급할 기물을 선택하세요</div>
@@ -94,21 +97,30 @@
         </div>
     </div>
 
+    <!-- 기본 컨트롤 영역 -->
     <div id="controls">
         <div class="mode-select">
             <button class="btn-toggle-color" onclick="toggleComputerColor()">백/흑 전환</button>
             <span class="mode-label" id="turn-label">흑 차례:</span>
             
+            <!-- 로직 옵션 제거 -->
             <label><input type="radio" name="mode" value="random" onchange="handleModeChange()"> 랜덤</label>
             <label><input type="radio" name="mode" value="engine" checked onchange="handleModeChange()"> 엔진</label>
             <label><input type="radio" name="mode" value="user" onchange="handleModeChange()"> 유저</label>
         </div>
         
+        <!-- 1번째 줄 버튼 3개 (엔드게임 정석) -->
         <div class="btn-group-row">
-            <button class="btn-new" onclick="newGame('random')">랜덤시작</button>
-            <button class="btn-new-center" onclick="newGame('lucena')">루세나시작</button>
+            <button class="btn-lucena" onclick="newGame('lucena')">루세나시작</button>
+            <button class="btn-philidor" onclick="newGame('philidor')">필리도어시작</button>
+            <button class="btn-vancura" onclick="newGame('vancura')">반쿠라시작</button>
+        </div>
+        <!-- 2번째 줄 버튼 2개 -->
+        <div class="btn-group-row">
+            <button class="btn-random" onclick="newGame('random')">랜덤시작</button>
             <button class="btn-restart" onclick="restartGame()">재시작</button>
         </div>
+        <!-- 3번째 줄 버튼 3개 -->
         <div class="btn-group-row">
             <button class="btn-editor" onclick="startEditor()">편집기</button>
             <button class="btn-undo" onclick="undoMove()">되돌리기</button>
@@ -116,6 +128,7 @@
         </div>
     </div>
 
+    <!-- 복기 컨트롤 영역 -->
     <div id="replay-controls" style="display: none;">
         <div class="nav-group">
             <button class="btn-nav" onclick="navDemo('first')">≪</button>
@@ -335,32 +348,79 @@
 
         function generateLucenaFEN() {
             while (true) {
-                // c, d, e, f 파일(2, 3, 4, 5) 중에서 폰 위치를 선정합니다. (루세나의 정석 범위)
                 const pF = Math.floor(Math.random() * 4) + 2; 
-                
-                // 단변(Short side)의 방향을 무작위로 설정 (-1 은 왼쪽, 1 은 오른쪽)
                 const shortDir = Math.random() < 0.5 ? -1 : 1;
-                // 장변(Long side)은 반대쪽
                 const longDir = -shortDir;
 
-                // 백 킹, 폰 위치 (8랭크, 7랭크)
                 const wk = { r: 0, c: pF };
                 const wp = { r: 1, c: pF };
                 
-                // 백 룩 위치: 단변에서 1랭크나 2랭크에서 흑 킹을 차단
+                // 단변 차단하는 백 룩
                 const wr = { r: Math.random() < 0.5 ? 6 : 7, c: pF + shortDir };
-                
-                // 흑 킹 위치: 단변 안쪽의 8랭크 또는 7랭크
+                // 단변 밖으로 밀려난 흑 킹
                 const bk = { r: Math.random() < 0.5 ? 0 : 1, c: pF + shortDir * 2 };
                 
-                // 흑 룩 위치: 장변(Long side)의 가장 먼 곳, 1~3랭크에 자유롭게 위치
+                // 장변에 위치한 흑 룩
                 const br_r = Math.floor(Math.random() * 3) + 5; 
                 const br_c = longDir === 1 ? (Math.floor(Math.random() * 2) + 6) : (Math.floor(Math.random() * 2)); 
 
                 let fen = assembleFen(wk, wr, wp, bk, br);
                 const tempGame = new Chess();
                 
-                // 체스 엔진 규칙상 유효한지 검증 후 반환
+                if (tempGame.load(fen)) {
+                    if (!tempGame.game_over()) {
+                        return fen;
+                    }
+                }
+            }
+        }
+
+        function generatePhilidorFEN() {
+            while (true) {
+                // 필리도어 정석: 폰이 5랭크 도달, 방어 킹은 승급 칸에, 방어 룩은 3랭크에 있어 공격 킹을 차단
+                const f = Math.floor(Math.random() * 4) + 2; 
+                
+                const wp = { r: 3, c: f }; // 5랭크 
+                const wk = { r: 4, c: f }; // 4랭크 (폰 뒤)
+                const bk = { r: 0, c: f }; // 8랭크 (승급 지점 방어)
+                
+                const wr = { r: 1, c: (f + 2) % 8 }; // 7랭크 아무 곳
+                const br = { r: 2, c: (f - 2 + 8) % 8 }; // 6랭크 (상대 킹의 3랭크 진출 차단)
+
+                let fen = assembleFen(wk, wr, wp, bk, br);
+                const tempGame = new Chess();
+                
+                if (tempGame.load(fen)) {
+                    if (!tempGame.game_over()) {
+                        return fen;
+                    }
+                }
+            }
+        }
+
+        function generateVancuraFEN() {
+            while (true) {
+                // 반쿠라 정석: 룩 폰(a 또는 h)을 가진 상태에서 수비하는 형태
+                const isAFile = Math.random() < 0.5;
+                let wp, wk, wr, bk, br;
+
+                if (isAFile) {
+                    wp = { r: 3, c: 0 }; // a5
+                    wk = { r: 2, c: 0 }; // a6
+                    bk = { r: 1, c: 6 }; // g7
+                    wr = { r: 7, c: 1 }; // b1
+                    br = { r: 3, c: 5 }; // f5 (측면 방어)
+                } else {
+                    wp = { r: 3, c: 7 }; // h5
+                    wk = { r: 2, c: 7 }; // h6
+                    bk = { r: 1, c: 1 }; // b7
+                    wr = { r: 7, c: 6 }; // g1
+                    br = { r: 3, c: 2 }; // c5 (측면 방어)
+                }
+
+                let fen = assembleFen(wk, wr, wp, bk, br);
+                const tempGame = new Chess();
+                
                 if (tempGame.load(fen)) {
                     if (!tempGame.game_over()) {
                         return fen;
@@ -524,7 +584,23 @@
         function newGame(type) {
             stopDemoAndReset();
 
-            const fen = type === 'lucena' ? generateLucenaFEN() : generateRandomValidFEN_Anywhere();
+            let fen = "";
+            let message = "";
+
+            if (type === 'lucena') {
+                fen = generateLucenaFEN();
+                message = "루세나 포지션이 무작위로 생성되었습니다! 다리를 만들어 승리하세요.";
+            } else if (type === 'philidor') {
+                fen = generatePhilidorFEN();
+                message = "필리도어 포지션이 생성되었습니다! 무승부 방어의 정석을 연습하세요.";
+            } else if (type === 'vancura') {
+                fen = generateVancuraFEN();
+                message = "반쿠라 포지션이 생성되었습니다! 룩 폰 엔드게임의 정석을 연습하세요.";
+            } else {
+                fen = generateRandomValidFEN_Anywhere();
+                message = "무작위 배치 완료! 첫 수를 둬보세요.";
+            }
+
             game.load(fen);
             
             initialFenOfCurrentGame = fen;
@@ -532,7 +608,6 @@
             missedBestMove = null;
             isCalculating = false;
             
-            const message = type === 'lucena' ? "루세나 포지션이 무작위로 생성되었습니다! 다리를 만들어 승리하세요." : "무작위 배치 완료! 첫 수를 둬보세요.";
             document.getElementById('feedback').innerText = message;
             document.getElementById('feedback').style.color = "blue";
             
@@ -759,7 +834,6 @@
                 moveObj = game.move(bestMove, { sloppy: true });
             } 
             else {
-                // 랜덤 모드
                 const moves = game.moves();
                 const randomMove = moves[Math.floor(Math.random() * moves.length)];
                 moveObj = game.move(randomMove);
